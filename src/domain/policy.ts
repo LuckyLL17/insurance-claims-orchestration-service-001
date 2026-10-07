@@ -1,5 +1,17 @@
-import { PolicyVersion } from './types';
+import { PolicySelectionBasis, PolicyVersion } from './types';
 import { iso } from './ids';
+
+export type PolicySelectionErrorCode = 'UNKNOWN_POLICY' | 'NO_EFFECTIVE_POLICY_VERSION' | 'REPORTED_BEFORE_LOSS';
+
+export class PolicySelectionError extends Error {
+  override readonly name = 'PolicySelectionError';
+  constructor(readonly code: PolicySelectionErrorCode, readonly details: Record<string, unknown>, message: string) {
+    super(message);
+  }
+}
+
+const ms = (value: string): number => Date.parse(iso(value));
+const intervalOf = (version: PolicyVersion): string => `v${version.version} [${iso(version.effectiveFrom)}, ${version.effectiveTo ? iso(version.effectiveTo) : 'open'})`;
 
 export class PolicyCatalog {
   private readonly versions = new Map<string, PolicyVersion[]>();
@@ -17,28 +29,47 @@ export class PolicyCatalog {
     this.versions.set(policy.policyId, versions);
   }
 
-  snapshot(policyId: string, lossAt: string): PolicyVersion {
-    const requested = iso(lossAt);
-    const calendarDay = requested.slice(0, 10);
-    const candidates = (this.versions.get(policyId) ?? []).filter((version) => {
-      const fromDay = iso(version.effectiveFrom).slice(0, 10);
-      const toDay = version.effectiveTo ? iso(version.effectiveTo).slice(0, 10) : undefined;
-      const startsOnOrBefore = calendarDay >= fromDay;
-      const endsOnOrAfter = !toDay || calendarDay <= toDay;
-      return startsOnOrBefore && endsOnOrAfter;
-    });
-    const selected = candidates
-      .slice()
-      .sort((left, right) => left.version - right.version)
-      .at(-1);
-    if (!selected) {
-      throw new Error(`no effective policy version for ${policyId} at ${lossAt}`);
+  /**
+   * Selects the liability version truly in force at the accident time.
+   * All three timestamps participate in the decision: the loss time picks the
+   * effective interval, the report time is validated against the loss time, and
+   * endorsement effectiveFrom/effectiveTo are compared at full precision using a
+   * uniform left-closed right-open rule: effectiveFrom <= lossAt < effectiveTo.
+   */
+  select(policyId: string, lossAt: string, reportedAt: string): { policy: PolicyVersion; basis: PolicySelectionBasis } {
+    const lossIso = iso(lossAt);
+    const reportedIso = iso(reportedAt);
+    if (Date.parse(reportedIso) < Date.parse(lossIso)) {
+      throw new PolicySelectionError('REPORTED_BEFORE_LOSS', { policyId, lossAt: lossIso, reportedAt: reportedIso }, `claim reported at ${reportedIso} is before the loss at ${lossIso}`);
     }
-    return structuredClone({
+    const versions = this.versions.get(policyId) ?? [];
+    if (versions.length === 0) {
+      throw new PolicySelectionError('UNKNOWN_POLICY', { policyId, lossAt: lossIso, reportedAt: reportedIso }, `no policy versions registered for ${policyId}`);
+    }
+    const lossMs = Date.parse(lossIso);
+    const covering = versions.filter((version) => {
+      const fromMs = ms(version.effectiveFrom);
+      const toMs = version.effectiveTo ? ms(version.effectiveTo) : Number.POSITIVE_INFINITY;
+      return fromMs <= lossMs && lossMs < toMs;
+    });
+    // On overlapping intervals the endorsement whose interval starts closest
+    // before the loss governs; version number only breaks exact ties.
+    const selected = covering.sort((a, b) => ms(a.effectiveFrom) - ms(b.effectiveFrom) || a.version - b.version).at(-1);
+    if (!selected) {
+      const knownVersions = versions.map((version) => ({ version: version.version, effectiveFrom: iso(version.effectiveFrom), effectiveTo: version.effectiveTo ? iso(version.effectiveTo) : undefined }));
+      throw new PolicySelectionError('NO_EFFECTIVE_POLICY_VERSION', { policyId, lossAt: lossIso, reportedAt: reportedIso, knownVersions }, `no effective policy version for ${policyId} at loss time ${lossIso}; known intervals: ${versions.map(intervalOf).join(', ')}`);
+    }
+    const policy = structuredClone({
       ...selected,
       coverages: [...selected.coverages],
-      effectiveFrom: new Date(selected.effectiveFrom).toISOString(),
-      effectiveTo: selected.effectiveTo ? new Date(selected.effectiveTo).toISOString() : undefined,
+      effectiveFrom: iso(selected.effectiveFrom),
+      effectiveTo: selected.effectiveTo ? iso(selected.effectiveTo) : undefined,
     });
+    const basis: PolicySelectionBasis = { policyId, lossAt: lossIso, reportedAt: reportedIso, version: policy.version, effectiveFrom: policy.effectiveFrom, effectiveTo: policy.effectiveTo, boundaryRule: 'left-closed-right-open', decidedAt: iso() };
+    return { policy, basis };
+  }
+
+  snapshot(policyId: string, lossAt: string, reportedAt: string = lossAt): PolicyVersion {
+    return this.select(policyId, lossAt, reportedAt).policy;
   }
 }

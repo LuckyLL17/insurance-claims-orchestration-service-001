@@ -29,6 +29,7 @@ export interface Participant { kind: 'person' | 'vehicle' | 'device' | 'repair_s
 export interface MonetaryAmount { currency: string; minor: number; }
 export interface LossEstimate { currency: string; gross: number; deductible?: number; liabilityShare?: number; cap?: number; }
 export interface PolicyVersion { policyId: string; version: number; effectiveFrom: string; effectiveTo?: string; coverages: string[]; deductibleMinor: number; limitMinor: number; }
+export interface PolicySelectionBasis { policyId: string; lossAt: string; reportedAt: string; version: number; effectiveFrom: string; effectiveTo?: string; boundaryRule: 'left-closed-right-open'; decidedAt: string; }
 export interface EvidenceRecord { id: string; kind: string; hash: string; version: number; receivedAt: string; reviewed: boolean; accepted?: boolean; source: string; supersedes?: string; }
 export interface PaymentEntry { id: string; kind: 'authorization' | 'settlement' | 'reversal' | 'recovery'; amount: MonetaryAmount; sourceId: string; status: 'pending' | 'posted' | 'voided'; createdAt: string; }
 export interface RuleSnapshot { version: string; frozenAt: string; ruleIds: string[]; }
@@ -46,6 +47,7 @@ export interface ClaimState {
   loss: LossEstimate;
   policy?: PolicyVersion;
   ruleSnapshot?: RuleSnapshot;
+  snapshotBasis?: PolicySelectionBasis;
   evidence: EvidenceRecord[];
   requiredEvidence: Set<string>;
   completedSurveys: string[];
