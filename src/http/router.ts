@@ -30,5 +30,12 @@ export async function route(req: IncomingMessage, res: ServerResponse, app: AppC
     if (method === 'GET' && path[2] === 'tasks') return json(res, 200, app.tasks.list(id));
     if (method === 'POST' && path[2] === 'replay') return json(res, 200, app.replay.execute(id, input.until));
     return json(res, 404, { error: 'route not found' });
-  } catch (error) { json(res, 400, { error: error instanceof Error ? error.message : 'unknown error' }); }
+  } catch (error) {
+    const failure = error as (Error & { code?: string; details?: unknown }) | undefined;
+    json(res, 400, {
+      error: failure instanceof Error ? failure.message : 'unknown error',
+      ...(failure?.code ? { code: failure.code } : {}),
+      ...(failure?.details !== undefined ? { details: failure.details } : {}),
+    });
+  }
 }

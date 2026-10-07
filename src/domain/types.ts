@@ -28,7 +28,7 @@ export type ClaimEventType =
 export interface Participant { kind: 'person' | 'vehicle' | 'device' | 'repair_shop' | 'account'; id: string; role?: string; }
 export interface MonetaryAmount { currency: string; minor: number; }
 export interface LossEstimate { currency: string; gross: number; deductible?: number; liabilityShare?: number; cap?: number; }
-export interface PolicyVersion { policyId: string; version: number; effectiveFrom: string; effectiveTo?: string; coverages: string[]; deductibleMinor: number; limitMinor: number; }
+export interface PolicyVersion { policyId: string; version: number; effectiveFrom: string; effectiveTo?: string; publishedAt?: string; coverages: string[]; deductibleMinor: number; limitMinor: number; }
 export interface EvidenceRecord { id: string; kind: string; hash: string; version: number; receivedAt: string; reviewed: boolean; accepted?: boolean; source: string; supersedes?: string; }
 export interface PaymentEntry { id: string; kind: 'authorization' | 'settlement' | 'reversal' | 'recovery'; amount: MonetaryAmount; sourceId: string; status: 'pending' | 'posted' | 'voided'; createdAt: string; }
 export interface RuleSnapshot { version: string; frozenAt: string; ruleIds: string[]; }
